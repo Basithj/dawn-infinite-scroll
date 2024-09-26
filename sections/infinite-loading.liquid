@@ -1,0 +1,118 @@
+<infinite-scroll data-products-container="#product-grid-wrapper" data-pagination-selector=".pagination" data-next-page-selector=".pagination__item--next">
+  <div id="product-grid-wrapper">
+    <ul id="product-grid" data-id="{{ section.id }}" class="
+      grid grid--2-col negative-margin product-grid
+      {% if collection.products_count < 4 %} grid--{{ collection.products_count }}-col-tablet{% else %}
+        {% if collection.products_count == 4 %} grid--4-col-desktop{% else %} grid--3-col-tablet grid--one-third-max grid--4-col-desktop grid--quarter-max{% endif %}
+      {% endif %}">
+      {%- for product in collection.products -%}
+        <li class="grid__item grid__item--product">
+          {% render 'product-card',
+            product_card_product: product, 
+            media_size: section.settings.image_ratio,
+            show_secondary_image: section.settings.show_secondary_image,
+            add_image_padding: section.settings.add_image_padding,
+            show_vendor: section.settings.show_vendor,
+            show_image_outline: section.settings.show_image_outline,
+            show_rating: section.settings.show_rating
+          %}
+        </li>
+      {%- endfor -%}
+    </ul>
+  </div>
+
+  <div class="loading-overlay-wrapper hidden">
+    <div class="loading-overlay__spinner" style="width:32px;height:32px;">
+      <svg aria-hidden="true" focusable="false" role="presentation" class="spinner" viewBox="0 0 66 66" xmlns="http://www.w3.org/2000/svg">
+        <circle class="path" fill="none" stroke-width="6" cx="33" cy="33" r="30"></circle>
+      </svg>
+    </div>
+  </div>
+
+  {%- if paginate.pages > 1 -%}
+    {% render 'pagination', paginate: paginate, anchor: '' %}
+  {%- endif -%}
+</infinite-scroll>
+
+<script type="text/javascript">
+class InfiniteScroll extends HTMLElement {
+  constructor() {
+    super();
+    const _this = this;
+    _this.productsContainerSelector = _this.getAttribute('data-products-container');
+    _this.paginationSelector = _this.getAttribute('data-pagination-selector');
+    _this.nextPageSelector = _this.getAttribute('data-next-page-selector');
+    _this.productsContainerEl = _this.querySelector(_this.productsContainerSelector);
+    _this.paginationEl = _this.querySelector(_this.paginationSelector);
+    _this.loadingIndicator = _this.querySelector('.loading-overlay-wrapper');
+
+    if (!_this.productsContainerEl || !_this.paginationEl) {
+      console.error('Wrong configuration for infinite scroll');
+      return;
+    }
+
+    try {
+      _this.observer = _this.registerObserver(_this.loadNextPage.bind(_this));
+      _this.observer.observe(_this.paginationEl);
+      _this.paginationEl.style.visibility = 'hidden';
+    } catch (error) {}
+
+  }
+
+  registerObserver(callback) {
+    let callbackIsRunning = false
+    return new IntersectionObserver(function (entries) {
+      if (entries[0].isIntersecting && !callbackIsRunning) {
+        callbackIsRunning = true;
+        callback()
+          .then(_ => callbackIsRunning = false)
+          .catch(_ => callbackIsRunning = false);
+      }
+    })
+  }
+
+  loadNextPage() {
+    const nextPageEl = _this.paginationEl.querySelector(_this.nextPageSelector);
+    if (!nextPageEl) {
+      _this.observer.disconnect();
+      return Promise.resolve();
+    }
+    const nextPageUrl = nextPageEl.getAttribute('href');
+    _this.loadingIndicator.classList.remove('hidden');
+    return fetch(nextPageUrl)
+      .then(result => {
+        _this.loadingIndicator.classList.add('hidden')
+        if (!result.ok) {
+          throw(result.statusText);
+        }
+        return result.text()
+      })
+      .then(_this.handleNextPage.bind(_this))
+  }
+
+  handleNextPage(nextPageContent) {
+    const nextPageHtml = new DOMParser().parseFromString(nextPageContent, 'text/html')
+    const nextPageProducts = nextPageHtml.querySelector(_this.productsContainerSelector)
+    if (!nextPageProducts) {
+      console.warn('Infinite scroll: Could not find any products in next page', nextPageHtml);
+      return;
+    }
+    _this.productsContainerEl.insertAdjacentHTML('beforeend', nextPageProducts.innerHTML);
+    const nextPagePagination = nextPageHtml.querySelector(_this.paginationSelector);
+    if (!nextPagePagination) {
+      console.warn('Infinite scroll: Could not find any pagination in next page');
+      return;
+    }
+    _this.paginationEl.innerHTML = nextPagePagination.innerHTML;
+  }
+}
+
+customElements.define('infinite-scroll', InfiniteScroll);
+</script>
+
+{% schema %}
+  {
+    "name": "Infinite Scroll",
+    "settings": []
+  }
+{% endschema %}
